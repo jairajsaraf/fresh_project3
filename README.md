@@ -5,17 +5,23 @@ Beat validation log2-MSE of 0.374 using TensorFlow deep learning.
 
 ## Key Improvements Implemented
 
-### 1. Dataset Rebalancing ✅
-- **Problem**: Severe 19x class imbalance (k=4,m=2: 52.88% vs k=4,m=5: 2.78%)
-- **Solution**: Resampled to exactly 9,000 samples per (k,m) combination
-- **Result**: Perfect 11.11% distribution across all 9 groups
+### 1. Advanced Data Augmentation ✅
+- **Problem**: Original combined dataset had 19x imbalance and missing DS-3
+- **Solution**:
+  - Properly merged DS-1, DS-2, and **DS-3 (NEW!)**
+  - Applied domain-aware augmentation techniques
+  - Target: 12,000 samples per (k,m) combination
+- **Result**:
+  - **108,000 perfectly balanced samples** (1.00x imbalance ratio)
+  - Perfect 11.11% distribution across all 9 (k,m) groups
+  - 132,851 raw samples → 108,000 optimally balanced samples
 
 ### 2. Log2 Prediction Architecture ✅
 - **Problem**: Predicting raw m-height values (range: 3.7 to 180K) causes training instability
 - **Solution**: Predict log2(m-height), then exponentiate to 2^x
 - **Constraint**: All predictions ≥ 1.0 ensured via softplus activation
 
-### 3. Advanced Model Architecture ✅
+### 2. Advanced Model Architecture ✅
 - **Total Parameters**: 10,875,041 (10.9M)
 - **Architecture**:
   - Embedding layers for categorical k and m (32-dim each)
@@ -26,49 +32,98 @@ Beat validation log2-MSE of 0.374 using TensorFlow deep learning.
 - **Optimizer**: AdamW (lr=1e-3, weight_decay=1e-4)
 - **Callbacks**: EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
-## Dataset Statistics
+## Data Augmentation Strategy
 
-### Before Rebalancing
-- Total samples: 85,499
-- Imbalance ratio: 19.0x
-- Most common: k=4, m=2 (52.88%)
-- Least common: k=4, m=5 (2.78%)
+### Augmentation Techniques
+1. **Gaussian Noise Injection**: Preserves statistical properties
+2. **Controlled Perturbations**: Domain-aware magnitude scaling
+3. **SMOTE-like Interpolation**: Generate samples between similar instances
+4. **Mixed Strategies**: Combine multiple techniques for diversity
 
-### After Rebalancing
-- Total samples: 81,000 (9,000 per group)
-- Train/Val split: 68,850 / 12,150 (85% / 15%)
+### Source Datasets
+- **DS-1**: 32,087 samples (24.2%)
+- **DS-2**: 44,399 samples (33.4%)
+- **DS-3**: 56,365 samples (42.4%) - **NEW!**
+- **Total**: 132,851 raw samples
+
+### Augmented Dataset
+- Total samples: **108,000** (perfectly balanced)
+- Samples per (k,m): **12,000** (exactly)
+- Imbalance ratio: **1.00x** (perfect balance)
+- Train/Val split: 91,800 / 16,200 (85% / 15%)
 - Perfect stratification: Each group at 11.11%
 
 ## Files
 
-- `train_model.py` - Complete training pipeline
+### Scripts
+- `augment_dataset.py` - **Data augmentation script (CPU-intensive, run first)**
+- `train_model.py` - Training pipeline (GPU-intensive)
+- `analyze_datasets.py` - Dataset analysis tool
+- `inspect_data.py` - Data structure inspection utility
+
+### Datasets
+- `DS-1-samples_*.pkl` - Original dataset 1 (32K samples)
+- `DS-2-Train_*.pkl` - Original dataset 2 (44K samples)
+- `DS-3-Train_*.pkl` - **NEW dataset 3 (56K samples)**
+- `augmented_*.pkl` - **Balanced augmented dataset (108K samples)**
+- `combined_ALL_*.pkl` - Old combined dataset (deprecated)
+
+### Outputs
 - `best_model.h5` - Best model checkpoint
-- `training_history.png` - Loss curves (train vs validation)
-- `predictions_scatter.png` - Prediction quality visualization
-- `per_group_performance.txt` - Detailed per-(k,m) metrics
-- `combined_ALL_n_k_m_P_exact.pkl` - Input features
-- `combined_ALL_mHeights_exact.pkl` - Target outputs
+- `training_history.png` - Loss curves
+- `predictions_scatter.png` - Prediction quality plots
+- `per_group_performance.txt` - Per-(k,m) metrics
+
+### Documentation
+- `README.md` - This file
+- `DATA_AUGMENTATION_PLAN.md` - **Detailed augmentation strategy**
+- `requirements.txt` - Python dependencies
 
 ## Usage
 
+### Step 1: Data Augmentation (Run Once)
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Train model
+# Run data augmentation (CPU-intensive, ~1-2 minutes)
+python augment_dataset.py
+
+# Output: augmented_n_k_m_P.pkl, augmented_mHeights.pkl
+```
+
+### Step 2: Train Model
+```bash
+# Train model (GPU-intensive, uses augmented data)
 python train_model.py
+```
+
+### Optional: Analyze Datasets
+```bash
+# Analyze all datasets and see statistics
+python analyze_datasets.py
 ```
 
 ## Expected Results
 
 - **Target**: Validation log2-MSE < 0.374
-- **Baseline**: 0.374
-- **Expected**: 0.30-0.35 (15-20% improvement)
+- **Baseline (old combined)**: 0.374
+- **Expected (with augmentation)**: 0.30-0.33 (12-20% improvement)
 - **Stretch goal**: < 0.30
+
+### Why Better Performance Expected?
+
+1. **26% more training data**: 108K vs 85K samples
+2. **Perfect balance**: 1.00x vs 19x imbalance ratio
+3. **DS-3 inclusion**: 56K new samples (42.4% of total)
+4. **Domain-aware augmentation**: Better than naive resampling
+5. **Improved minority class coverage**: (4,5) and (5,4) now well-represented
 
 ## Success Criteria
 
-✅ Balanced dataset (each group ~11%)
+✅ Perfectly balanced dataset (each group exactly 11.11%)
+✅ All 3 source datasets included (DS-1, DS-2, DS-3)
+✅ Domain-aware augmentation applied
 ✅ Log2 prediction architecture
 ✅ All predictions ≥ 1.0
 ✅ Stratified validation split

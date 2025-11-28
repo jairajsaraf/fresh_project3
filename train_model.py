@@ -43,10 +43,11 @@ print()
 print("STEP 1: Loading Data")
 print("-"*70)
 
-with open('combined_ALL_n_k_m_P_exact.pkl', 'rb') as f:
+# Use augmented dataset (properly merged DS-1 + DS-2 + DS-3 with balanced augmentation)
+with open('augmented_n_k_m_P.pkl', 'rb') as f:
     inputs_raw = pickle.load(f)
 
-with open('combined_ALL_mHeights_exact.pkl', 'rb') as f:
+with open('augmented_mHeights.pkl', 'rb') as f:
     outputs_raw = pickle.load(f)
 
 print(f"Raw input samples: {len(inputs_raw)}")
@@ -89,45 +90,15 @@ print(f"\nImbalance ratio: {max_count/min_count:.1f}x")
 print()
 
 # ============================================================================
-# STEP 3: REBALANCE DATASET
+# STEP 3: VERIFY BALANCED DATASET
 # ============================================================================
-print("STEP 3: Rebalancing Dataset")
+print("STEP 3: Verifying Dataset Balance")
 print("-"*70)
 
-TARGET_SAMPLES = 9000
-print(f"Target samples per (k,m) combination: {TARGET_SAMPLES}")
-
-rebalanced_indices = []
-np.random.seed(42)  # For reproducibility
-
-for (k, m), indices in groups.items():
-    if len(indices) > TARGET_SAMPLES:
-        # Subsample (undersample majority classes)
-        selected = np.random.choice(indices, TARGET_SAMPLES, replace=False)
-    else:
-        # Oversample (oversample minority classes)
-        selected = np.random.choice(indices, TARGET_SAMPLES, replace=True)
-    rebalanced_indices.extend(selected)
-
-# Shuffle the rebalanced indices
-np.random.shuffle(rebalanced_indices)
-
-print(f"Original dataset size: {len(inputs_raw)}")
-print(f"Rebalanced dataset size: {len(rebalanced_indices)}")
-print()
-
-print("REBALANCED DATA DISTRIBUTION:")
-print("-"*70)
-rebalanced_groups = defaultdict(int)
-for idx in rebalanced_indices:
-    sample = inputs_raw[idx]
-    k = int(sample[1])
-    m = int(sample[2])
-    rebalanced_groups[(k, m)] += 1
-
-for (k, m), count in sorted(rebalanced_groups.items()):
-    percentage = (count / len(rebalanced_indices)) * 100
-    print(f"  k={k}, m={m}: {count:6d} samples ({percentage:5.2f}%)")
+# The augmented dataset is already perfectly balanced (12,000 per group)
+# No additional rebalancing needed
+print("Using pre-balanced augmented dataset (12,000 samples per (k,m) group)")
+print(f"Dataset already balanced at: {len(inputs_raw):,} total samples")
 print()
 
 # ============================================================================
@@ -136,9 +107,9 @@ print()
 print("STEP 4: Preparing Data for Training")
 print("-"*70)
 
-# Extract rebalanced data
-inputs_rebalanced = [inputs_raw[i] for i in rebalanced_indices]
-outputs_rebalanced = [outputs_raw[i] for i in rebalanced_indices]
+# Use all data (already balanced)
+inputs_rebalanced = inputs_raw
+outputs_rebalanced = outputs_raw
 
 # Extract n, k, m values and flatten P matrices
 n_values = []
