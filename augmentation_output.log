@@ -1,0 +1,111 @@
+======================================================================
+ADVANCED DATA AUGMENTATION FOR HEIGHT PREDICTION
+======================================================================
+
+STEP 1: Loading Source Datasets
+----------------------------------------------------------------------
+Loading DS-1...
+  Loaded 32,087 samples
+Loading DS-2...
+  Loaded 44,399 samples
+Loading DS-3 (NEW!)...
+  Loaded 56,365 samples
+
+STEP 2: Merging All Datasets
+----------------------------------------------------------------------
+Total merged samples: 132,851
+DS-1 contribution: 32,087 (24.2%)
+DS-2 contribution: 44,399 (33.4%)
+DS-3 contribution: 56,365 (42.4%)
+
+STEP 3: Analyzing (k,m) Distribution
+----------------------------------------------------------------------
+
+Current distribution:
+  k=4, m=2:  12494 samples ( 9.40%)
+  k=4, m=3:  12188 samples ( 9.17%)
+  k=4, m=4:  11226 samples ( 8.45%)
+  k=4, m=5:   7220 samples ( 5.43%)
+  k=5, m=2:  14883 samples (11.20%)
+  k=5, m=3:  13778 samples (10.37%)
+  k=5, m=4:   8603 samples ( 6.48%)
+  k=6, m=2:  34247 samples (25.78%)
+  k=6, m=3:  18212 samples (13.71%)
+
+Imbalance ratio: 4.7x
+
+STEP 4: Defining Augmentation Techniques
+----------------------------------------------------------------------
+Augmentation techniques defined:
+  1. Gaussian noise injection (preserves statistical properties)
+  2. Controlled perturbations (domain-aware scaling)
+  3. Sample interpolation (SMOTE-like for same k,m,n groups)
+  4. Mixed techniques (combines multiple approaches)
+
+STEP 5: Determining Augmentation Strategy
+----------------------------------------------------------------------
+Target: 12,000 samples per (k,m) combination
+  k=4, m=2: Will subsample to 12,000 (have 12,494)
+  k=4, m=3: Will subsample to 12,000 (have 12,188)
+  k=4, m=4: Need 774 augmented samples (have 11,226)
+  k=4, m=5: Need 4,780 augmented samples (have 7,220)
+  k=5, m=2: Will subsample to 12,000 (have 14,883)
+  k=5, m=3: Will subsample to 12,000 (have 13,778)
+  k=5, m=4: Need 3,397 augmented samples (have 8,603)
+  k=6, m=2: Will subsample to 12,000 (have 34,247)
+  k=6, m=3: Will subsample to 12,000 (have 18,212)
+
+STEP 6: Performing Data Augmentation
+----------------------------------------------------------------------
+Processing groups...
+  Processing group 1/9: k=4, m=2... Done
+  Processing group 2/9: k=4, m=3... Done
+  Processing group 3/9: k=4, m=4... Done
+  Processing group 4/9: k=4, m=5... Done
+  Processing group 5/9: k=5, m=2... Done
+  Processing group 6/9: k=5, m=3... Done
+  Processing group 7/9: k=5, m=4... Done
+  Processing group 8/9: k=6, m=2... Done
+  Processing group 9/9: k=6, m=3... Done
+
+Augmentation complete!
+Total augmented samples: 108,000
+
+STEP 7: Verifying Balanced Distribution
+----------------------------------------------------------------------
+
+Final distribution:
+  k=4, m=2:  12000 samples (11.11%)
+  k=4, m=3:  12000 samples (11.11%)
+  k=4, m=4:  12000 samples (11.11%)
+  k=4, m=5:  12000 samples (11.11%)
+  k=5, m=2:  12000 samples (11.11%)
+  k=5, m=3:  12000 samples (11.11%)
+  k=5, m=4:  12000 samples (11.11%)
+  k=6, m=2:  12000 samples (11.11%)
+  k=6, m=3:  12000 samples (11.11%)
+
+STEP 8: Saving Augmented Dataset
+----------------------------------------------------------------------
+Saving to augmented_n_k_m_P.pkl...
+Saving to augmented_mHeights.pkl...
+
+✓ Saved 108,000 samples
+
+======================================================================
+AUGMENTATION SUMMARY
+======================================================================
+
+Original (DS-1 + DS-2 + DS-3): 132,851 samples
+Augmented dataset: 108,000 samples
+Increase: -24,851 samples
+
+Balance:
+  Min samples per (k,m): 12,000
+  Max samples per (k,m): 12,000
+  Imbalance ratio: 1.00x
+
+Target achieved: True
+
+✓ Data augmentation complete!
+======================================================================
