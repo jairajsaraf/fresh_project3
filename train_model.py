@@ -198,6 +198,42 @@ for (k, m), count in sorted(val_groups.items()):
 print()
 
 # ============================================================================
+# STEP 5B: COMPUTE SAMPLE WEIGHTS FOR GROUP-WEIGHTED LOSS
+# ============================================================================
+print("STEP 5B: Computing Sample Weights for Group-Weighted Loss")
+print("-"*70)
+
+# Define per-group weights based on complexity
+# Higher k and m -> higher weight to force model to focus on difficult groups
+group_weights = {
+    (4, 2): 1.0,   # baseline
+    (4, 3): 1.0,
+    (5, 2): 1.0,
+    (4, 4): 1.5,   # increase focus
+    (5, 3): 1.5,
+    (6, 2): 2.0,   # significant focus
+    (5, 4): 3.0,   # high focus
+    (6, 3): 3.0,
+    (4, 5): 5.0,   # maximum focus on worst performer
+}
+
+# Compute sample weights for training set
+sample_weights_train = np.array([
+    group_weights.get((int(k), int(m)), 1.0)
+    for k, m in zip(k_train.flatten(), m_train.flatten())
+], dtype=np.float32)
+
+print("Sample weights distribution:")
+for (k, m), weight in sorted(group_weights.items()):
+    count = np.sum((k_train.flatten() == k) & (m_train.flatten() == m))
+    print(f"  k={k}, m={m}: weight={weight:.1f} ({count:5d} samples)")
+
+print(f"\nSample weights shape: {sample_weights_train.shape}")
+print(f"Sample weights range: [{sample_weights_train.min():.1f}, {sample_weights_train.max():.1f}]")
+print(f"Average weight: {sample_weights_train.mean():.2f}")
+print()
+
+# ============================================================================
 # STEP 6: BUILD MODEL
 # ============================================================================
 print("STEP 6: Building TensorFlow Model")
@@ -239,14 +275,14 @@ def build_model(p_shape, k_vocab_size=7, m_vocab_size=6):
     # Deep network with residual connections
     x = Dense(1024, activation='gelu')(combined)
     x = BatchNormalization()(x)
-    x = Dropout(0.3)(x)
+    x = Dropout(0.4)(x)  # Increased from 0.3 for better regularization
 
     # 4 residual blocks
     for i in range(4):
         residual = x
         x = Dense(1024, activation='gelu')(x)
         x = BatchNormalization()(x)
-        x = Dropout(0.2)(x)
+        x = Dropout(0.4)(x)  # Increased from 0.2 for better regularization
         x = Dense(1024, activation='gelu')(x)
         x = BatchNormalization()(x)
         x = Add()([x, residual])
@@ -316,7 +352,8 @@ print()
 print("STEP 8: Compiling Model")
 print("-"*70)
 
-optimizer = AdamW(learning_rate=1e-3, weight_decay=1e-4)
+# Run 2 improvements: reduced learning rate (1e-3 -> 5e-4) and increased weight decay (1e-4 -> 1e-3)
+optimizer = AdamW(learning_rate=5e-4, weight_decay=1e-3)
 
 model.compile(
     optimizer=optimizer,
@@ -325,6 +362,8 @@ model.compile(
 )
 
 print("Model compiled with AdamW optimizer and log2-MSE loss")
+print(f"  Learning rate: 5e-4 (reduced from 1e-3)")
+print(f"  Weight decay: 1e-3 (increased from 1e-4)")
 print()
 
 # ============================================================================
@@ -336,7 +375,7 @@ print("-"*70)
 callbacks = [
     EarlyStopping(
         monitor='val_loss',
-        patience=50,
+        patience=30,  # Reduced from 50 for more aggressive early stopping
         restore_best_weights=True,
         verbose=1
     ),
@@ -356,7 +395,7 @@ callbacks = [
 ]
 
 print("Callbacks configured:")
-print("  - EarlyStopping (patience=50)")
+print("  - EarlyStopping (patience=30, reduced from 50)")
 print("  - ReduceLROnPlateau (patience=20, factor=0.5)")
 print("  - ModelCheckpoint (saves best model)")
 print()
@@ -369,12 +408,14 @@ print("STEP 10: TRAINING MODEL")
 print("="*70)
 print(f"Batch size: 256")
 print(f"Max epochs: 200")
-print(f"Early stopping patience: 50")
+print(f"Early stopping patience: 30")
+print(f"Group-weighted loss: ENABLED (weights 1.0-5.0x)")
 print()
 
 history = model.fit(
     [n_train, k_train, m_train, P_train],
     y_train,
+    sample_weight=sample_weights_train,  # Apply group-based weighting
     validation_data=([n_val, k_val, m_val, P_val], y_val),
     epochs=200,
     batch_size=256,
