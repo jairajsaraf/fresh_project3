@@ -11,6 +11,7 @@ Run 5 Strategy (Based on Professor's Top Submissions):
 6. USE mild class weighting (1.0-2.0x max, not 5.0x)
 7. IMPROVE learning rate schedule with exponential decay
 8. EXTEND training with better early stopping (patience=40, max_epochs=250)
+9. ADD data augmentation targeting hard/medium cases (NEW!)
 
 Expected Performance:
 - Easy cases: < 0.15 log2-MSE (match Run 2, don't degrade!)
@@ -72,13 +73,101 @@ print(f"Output range: [{np.min(outputs_raw):.2f}, {np.max(outputs_raw):.2f}]")
 print()
 
 # ============================================================================
-# STEP 2: PREPARE DATA
+# STEP 2: DATA AUGMENTATION
 # ============================================================================
-print("STEP 2: Preparing Data for Training")
+print("STEP 2: Data Augmentation")
 print("-"*70)
 
-inputs_rebalanced = inputs_raw
-outputs_rebalanced = outputs_raw
+def augment_sample(n, k, m, P_matrix, m_height, noise_scale=0.02):
+    """
+    Augment a single sample by adding small noise
+
+    Args:
+        n: float value
+        k, m: integers
+        P_matrix: probability matrix
+        m_height: target value
+        noise_scale: scale of noise to add
+
+    Returns:
+        Augmented (n, k, m, P_matrix), m_height
+    """
+    # Add small noise to n (±2%)
+    n_aug = n * (1 + np.random.uniform(-noise_scale, noise_scale))
+    n_aug = max(1.0, n_aug)  # Ensure n >= 1
+
+    # Add small noise to P matrix and renormalize to keep valid probabilities
+    P_aug = P_matrix.copy()
+    if P_aug.size > 0:
+        noise = np.random.normal(0, noise_scale, P_aug.shape)
+        P_aug = P_aug + noise
+        P_aug = np.clip(P_aug, 0, 1)  # Keep in [0, 1]
+
+        # Renormalize rows to sum to 1 (if P is a probability matrix)
+        if len(P_aug.shape) == 2:
+            row_sums = P_aug.sum(axis=1, keepdims=True)
+            row_sums = np.maximum(row_sums, 1e-7)  # Avoid division by zero
+            P_aug = P_aug / row_sums
+
+    return (n_aug, k, m, P_aug), m_height
+
+
+# Augmentation strategy: Focus more on hard cases
+HARD_GROUPS = [(5, 4), (6, 3), (4, 5)]
+MEDIUM_GROUPS = [(4, 4), (5, 3), (6, 2)]
+
+# Determine augmentation multiplier per group
+augmentation_config = {
+    # Hard cases: 3x augmentation (original + 2 augmented copies)
+    (5, 4): 2,
+    (6, 3): 2,
+    (4, 5): 2,
+    # Medium cases: 1.5x augmentation (original + 0.5 → 50% get 1 copy)
+    (4, 4): 1,
+    (5, 3): 1,
+    (6, 2): 1,
+    # Easy cases: no augmentation (original only)
+}
+
+inputs_augmented = []
+outputs_augmented = []
+
+print("Augmenting dataset...")
+print("Strategy:")
+print("  - Hard cases (k=5,m=4 | k=6,m=3 | k=4,m=5): +2 augmented copies each")
+print("  - Medium cases (k=4,m=4 | k=5,m=3 | k=6,m=2): +1 augmented copy each")
+print("  - Easy cases: No augmentation")
+print()
+
+for i, (sample, target) in enumerate(zip(inputs_raw, outputs_raw)):
+    n, k, m, P_matrix = sample
+
+    # Always keep original
+    inputs_augmented.append(sample)
+    outputs_augmented.append(target)
+
+    # Add augmented copies based on group
+    key = (k, m)
+    num_augmented = augmentation_config.get(key, 0)
+
+    for _ in range(num_augmented):
+        aug_sample, aug_target = augment_sample(n, k, m, P_matrix, target)
+        inputs_augmented.append(aug_sample)
+        outputs_augmented.append(aug_target)
+
+print(f"Original samples: {len(inputs_raw)}")
+print(f"Augmented samples: {len(inputs_augmented)}")
+print(f"Augmentation ratio: {len(inputs_augmented) / len(inputs_raw):.2f}x")
+print()
+
+# ============================================================================
+# STEP 3: PREPARE DATA
+# ============================================================================
+print("STEP 3: Preparing Data for Training")
+print("-"*70)
+
+inputs_rebalanced = inputs_augmented
+outputs_rebalanced = outputs_augmented
 
 n_values = []
 k_values = []
@@ -126,9 +215,9 @@ print(f"Output (m-height) range: [{outputs_array.min():.2f}, {outputs_array.max(
 print()
 
 # ============================================================================
-# STEP 3: STRATIFIED TRAIN-VAL SPLIT
+# STEP 4: STRATIFIED TRAIN-VAL SPLIT
 # ============================================================================
-print("STEP 3: Creating Stratified Train-Validation Split")
+print("STEP 4: Creating Stratified Train-Validation Split")
 print("-"*70)
 
 stratify_labels = k_values.flatten() * 10 + m_values.flatten()
@@ -151,9 +240,9 @@ print(f"Validation samples: {len(y_val)}")
 print()
 
 # ============================================================================
-# STEP 4: DEFINE COMPLEXITY GROUPS
+# STEP 5: DEFINE COMPLEXITY GROUPS
 # ============================================================================
-print("STEP 4: Defining Complexity Groups")
+print("STEP 5: Defining Complexity Groups")
 print("-"*70)
 
 # Based on Run 2 per-group performance:
@@ -171,9 +260,9 @@ print(f"Hard groups (Run 2: 0.958-1.422): {HARD_GROUPS}")
 print()
 
 # ============================================================================
-# STEP 5: BUILD SIMPLIFIED RESIDUAL MODEL
+# STEP 6: BUILD SIMPLIFIED RESIDUAL MODEL
 # ============================================================================
-print("STEP 5: Building Simplified Residual Model")
+print("STEP 6: Building Simplified Residual Model")
 print("-"*70)
 
 def build_simplified_residual_model(p_shape, k_vocab_size=7, m_vocab_size=6):
@@ -281,9 +370,9 @@ print("  ✅ Softplus output for log2 stability")
 print()
 
 # ============================================================================
-# STEP 6: DEFINE LOSS FUNCTION
+# STEP 7: DEFINE LOSS FUNCTION
 # ============================================================================
-print("STEP 6: Defining Loss Function")
+print("STEP 7: Defining Loss Function")
 print("-"*70)
 
 def log2_mse_loss(y_true, y_pred):
@@ -301,9 +390,9 @@ print("Custom log2-MSE loss function defined")
 print()
 
 # ============================================================================
-# STEP 7: MILD GROUP WEIGHTING (CRITICAL FIX!)
+# STEP 8: MILD GROUP WEIGHTING (CRITICAL FIX!)
 # ============================================================================
-print("STEP 7: Computing MILD Group Weights")
+print("STEP 8: Computing MILD Group Weights")
 print("-"*70)
 
 # CRITICAL: Run 4 used 5.0x weighting which caused 60-70% degradation in easy cases
@@ -339,9 +428,9 @@ print("This prevents overfitting to hard cases at expense of easy cases")
 print()
 
 # ============================================================================
-# STEP 8: COMPILE MODEL WITH IMPROVED OPTIMIZER
+# STEP 9: COMPILE MODEL WITH IMPROVED OPTIMIZER
 # ============================================================================
-print("STEP 8: Compiling Model")
+print("STEP 9: Compiling Model")
 print("-"*70)
 
 # AdamW with gradient clipping for stability
@@ -364,9 +453,9 @@ print(f"  Gradient clipping: 1.0 (NEW!)")
 print()
 
 # ============================================================================
-# STEP 9: SETUP IMPROVED CALLBACKS
+# STEP 10: SETUP IMPROVED CALLBACKS
 # ============================================================================
-print("STEP 9: Setting Up Training Callbacks")
+print("STEP 10: Setting Up Training Callbacks")
 print("-"*70)
 
 def lr_schedule(epoch, lr):
@@ -409,10 +498,10 @@ print("  - Exponential LR decay (0.95 per epoch after warmup)")
 print()
 
 # ============================================================================
-# STEP 10: TRAIN MODEL
+# STEP 11: TRAIN MODEL
 # ============================================================================
 print("="*70)
-print("STEP 10: TRAINING MODEL")
+print("STEP 11: TRAINING MODEL")
 print("="*70)
 print(f"Batch size: 256")
 print(f"Max epochs: 250 (increased for better convergence)")
@@ -435,10 +524,10 @@ print("Training completed!")
 print()
 
 # ============================================================================
-# STEP 11: EVALUATE MODEL
+# STEP 12: EVALUATE MODEL
 # ============================================================================
 print("="*70)
-print("STEP 11: EVALUATING MODEL")
+print("STEP 12: EVALUATING MODEL")
 print("="*70)
 
 model.load_weights('best_model_run5.h5')
@@ -469,7 +558,7 @@ print(f"  All predictions ≥ 1.0: {(y_pred_val.min() >= 1.0)}")
 print()
 
 # ============================================================================
-# STEP 12: DETAILED PER-GROUP ANALYSIS vs BASELINES
+# STEP 13: DETAILED PER-GROUP ANALYSIS vs BASELINES
 # ============================================================================
 print("="*70)
 print("PER-GROUP PERFORMANCE ANALYSIS vs BASELINES")
@@ -591,9 +680,9 @@ with open('run_5/detailed_comparison.txt', 'w') as f:
 print()
 
 # ============================================================================
-# STEP 13: GENERATE PLOTS
+# STEP 14: GENERATE PLOTS
 # ============================================================================
-print("STEP 13: Generating Plots")
+print("STEP 14: Generating Plots")
 print("-"*70)
 
 plt.figure(figsize=(12, 5))
