@@ -1,11 +1,25 @@
 """
-Height Prediction Model Training Script
+Height Prediction Model Training Script - RUN 6
 Objective: Beat validation log2-MSE of 0.374 using TensorFlow
 
-Key Improvements:
-1. Dataset rebalancing (~9,000 samples per (k,m) combination)
-2. Predicting log2(m-height) instead of raw values
-3. Advanced architecture with attention and residual blocks
+RUN 6 IMPROVEMENTS (based on top submission analysis):
+1. SIMPLIFIED residual architecture - NO multi-head attention
+2. LayerNorm instead of pure BatchNorm (better for residual nets)
+3. Only 2 residual blocks (not 4) - less overfitting
+4. Progressive width reduction (1024→512→256→128)
+5. Progressive dropout (0.3→0.2→0.1)
+6. NO group weighting - let model learn naturally (stratified split only)
+7. AdamW with gradient clipping (clipnorm=1.0)
+8. Exponential LR decay (5% per epoch after warmup)
+9. Better early stopping (patience=40)
+10. More epochs (250 max)
+
+Previous runs:
+- Run 2: 0.48 (baseline, unweighted)
+- Run 4: 0.538 (aggressive 5.0x weighting - degraded easy cases 60-70%!)
+- Run 5: 0.521 (mild 2.0x weighting - still degraded easy cases)
+
+Expected: 0.30-0.35 average log2-MSE (beat 0.374 target!)
 """
 
 import numpy as np
@@ -14,10 +28,10 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
     Input, Dense, Embedding, Flatten, Concatenate,
-    Dropout, BatchNormalization, Add, Reshape, MultiHeadAttention, Lambda
+    Dropout, BatchNormalization, LayerNormalization, Add, Reshape, MultiHeadAttention, Lambda
 )
 from tensorflow.keras.models import Model
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, LearningRateScheduler
 from tensorflow.keras.optimizers import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -205,10 +219,13 @@ print("-"*70)
 
 def build_model(p_shape, k_vocab_size=7, m_vocab_size=6):
     """
-    Build advanced model with:
+    Build SIMPLIFIED residual model based on top submissions:
     - Embeddings for categorical k and m
-    - Deep processing of P matrix with attention
-    - Residual blocks
+    - NO multi-head attention (too complex, not worth it)
+    - LayerNorm instead of pure BatchNorm
+    - Only 2 residual blocks (not 4)
+    - Progressive width reduction (1024→512→256→128)
+    - Progressive dropout (0.3→0.2→0.1)
     - Output: log2(m-height) with constraint ≥ 1.0
     """
     # Inputs
@@ -221,40 +238,53 @@ def build_model(p_shape, k_vocab_size=7, m_vocab_size=6):
     k_embed = Flatten()(Embedding(k_vocab_size, 32, name='k_embedding')(k_input))
     m_embed = Flatten()(Embedding(m_vocab_size, 32, name='m_embedding')(m_input))
 
-    # P matrix processing
+    # P matrix processing (SIMPLER than before - no attention)
     x = Dense(256, activation='gelu')(P_input)
-    x = BatchNormalization()(x)
-    x = Dropout(0.2)(x)
-    x = Dense(512, activation='gelu')(x)
-    x = BatchNormalization()(x)
-
-    # Multi-head attention on P features
-    x_attn = Reshape((1, 512))(x)
-    x_attn = MultiHeadAttention(num_heads=8, key_dim=64, dropout=0.1)(x_attn, x_attn)
-    x_attn = Flatten()(x_attn)
-
-    # Combine all features
-    combined = Concatenate()([n_input, k_embed, m_embed, x_attn])
-
-    # Deep network with residual connections
-    x = Dense(1024, activation='gelu')(combined)
-    x = BatchNormalization()(x)
+    x = LayerNormalization()(x)  # LayerNorm instead of BatchNorm
     x = Dropout(0.3)(x)
 
-    # 4 residual blocks
-    for i in range(4):
-        residual = x
-        x = Dense(1024, activation='gelu')(x)
-        x = BatchNormalization()(x)
-        x = Dropout(0.2)(x)
-        x = Dense(1024, activation='gelu')(x)
-        x = BatchNormalization()(x)
-        x = Add()([x, residual])
-
-    # Final dense layers
     x = Dense(512, activation='gelu')(x)
-    x = BatchNormalization()(x)
+    x = LayerNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    # Combine all features
+    combined = Concatenate()([n_input, k_embed, m_embed, x])
+
+    # Initial dense layer
+    x = Dense(1024, activation='gelu')(combined)
+    x = LayerNormalization()(x)
+    x = Dropout(0.3)(x)
+
+    # Residual Block 1 (with skip connection)
+    residual = x
+    x = Dense(1024, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Dropout(0.2)(x)
+    x = Dense(1024, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Add()([x, residual])
+
+    # Residual Block 2 (with skip connection)
+    residual = x
+    x = Dense(1024, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Dropout(0.2)(x)
+    x = Dense(1024, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Add()([x, residual])
+
+    # Progressive width reduction (like Example 5 from PDF)
+    x = Dense(512, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Dropout(0.2)(x)
+
     x = Dense(256, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Dropout(0.1)(x)
+
+    x = Dense(128, activation='gelu')(x)
+    x = LayerNormalization()(x)
+    x = Dropout(0.1)(x)
 
     # *** CRITICAL OUTPUT LAYER ***
     # Predict log2(m-height), then convert to m-height
@@ -269,7 +299,7 @@ def build_model(p_shape, k_vocab_size=7, m_vocab_size=6):
     model = Model(
         inputs=[n_input, k_input, m_input, P_input],
         outputs=output,
-        name='height_prediction_model'
+        name='simplified_residual_model'
     )
 
     return model
@@ -316,7 +346,11 @@ print()
 print("STEP 8: Compiling Model")
 print("-"*70)
 
-optimizer = AdamW(learning_rate=1e-3, weight_decay=1e-4)
+optimizer = AdamW(
+    learning_rate=1e-3,
+    weight_decay=1e-4,
+    clipnorm=1.0  # Gradient clipping for stability
+)
 
 model.compile(
     optimizer=optimizer,
@@ -333,17 +367,31 @@ print()
 print("STEP 9: Setting Up Training Callbacks")
 print("-"*70)
 
+# Exponential LR decay schedule
+def lr_schedule(epoch, lr):
+    """
+    Exponential decay like top submissions:
+    - Warmup phase for first 10 epochs
+    - Then decay by 5% each epoch
+    """
+    if epoch < 10:
+        return lr  # Warmup phase
+    else:
+        return lr * 0.95  # Decay by 5% each epoch
+
+lr_scheduler = LearningRateScheduler(lr_schedule, verbose=0)
+
 callbacks = [
     EarlyStopping(
         monitor='val_loss',
-        patience=50,
+        patience=40,  # Increased from 50 (better early stopping)
         restore_best_weights=True,
         verbose=1
     ),
     ReduceLROnPlateau(
         monitor='val_loss',
-        factor=0.5,
-        patience=20,
+        factor=0.7,  # Less aggressive than 0.5
+        patience=15,  # Reduced from 20
         min_lr=1e-6,
         verbose=1
     ),
@@ -352,13 +400,15 @@ callbacks = [
         monitor='val_loss',
         save_best_only=True,
         verbose=1
-    )
+    ),
+    lr_scheduler  # Add exponential decay
 ]
 
 print("Callbacks configured:")
-print("  - EarlyStopping (patience=50)")
-print("  - ReduceLROnPlateau (patience=20, factor=0.5)")
+print("  - EarlyStopping (patience=40)")
+print("  - ReduceLROnPlateau (patience=15, factor=0.7)")
 print("  - ModelCheckpoint (saves best model)")
+print("  - LR Scheduler (exponential decay: 5% per epoch after warmup)")
 print()
 
 # ============================================================================
@@ -368,15 +418,16 @@ print("="*70)
 print("STEP 10: TRAINING MODEL")
 print("="*70)
 print(f"Batch size: 256")
-print(f"Max epochs: 200")
-print(f"Early stopping patience: 50")
+print(f"Max epochs: 250")
+print(f"Early stopping patience: 40")
+print(f"NO group weighting - let model learn naturally")
 print()
 
 history = model.fit(
     [n_train, k_train, m_train, P_train],
     y_train,
     validation_data=([n_val, k_val, m_val, P_val], y_val),
-    epochs=200,
+    epochs=250,  # Increased from 200
     batch_size=256,
     callbacks=callbacks,
     verbose=1
