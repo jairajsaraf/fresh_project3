@@ -57,10 +57,10 @@ print()
 print("STEP 1: Loading Data")
 print("-"*70)
 
-with open('augmented_n_k_m_P.pkl', 'rb') as f:
+with open('data/combined_final_n_k_m_P.pkl', 'rb') as f:
     inputs_raw = pickle.load(f)
 
-with open('augmented_mHeights.pkl', 'rb') as f:
+with open('data/combined_final_mHeights.pkl', 'rb') as f:
     outputs_raw = pickle.load(f)
 
 print(f"Raw input samples: {len(inputs_raw)}")
